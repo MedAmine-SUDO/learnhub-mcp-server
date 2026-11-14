@@ -1,0 +1,18 @@
+{
+  "tenants": [
+    {
+      "token_sha256": "61c878f14c06a4b6bba7402eb14e33c918a0f1241327efd213c7c51036341003",
+      "company_id": 1,
+      "name": "Acme Corp",
+      "client_id": "acme-client",
+      "client_secret": "acme-secret"
+    },
+    {
+      "token_sha256": "df4f11c20a39ce2a4637997b3331ea6588a6f949babc3d05925fe93236d941a9",
+      "company_id": 2,
+      "name": "Globex",
+      "client_id": "globex-client",
+      "client_secret": "globex-secret"
+    }
+  ]
+}

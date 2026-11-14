@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: LearnHub MCP server - MCP JSON-RPC over a Lambda Function URL
+
+Parameters:
+  ApiBaseUrl:
+    Type: String
+    Description: Base URL of the LMS API
+  RegistryBucket:
+    Type: String
+    Description: S3 bucket holding tenants.json (hashed client tokens -> tenant credentials)
+
+Resources:
+  McpFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: learnhub-mcp
+      CodeUri: ../build/lambda.zip
+      Handler: learnhub_mcp.lambda_handler.lambda_handler
+      Runtime: python3.12
+      Architectures: [x86_64]
+      MemorySize: 512
+      Timeout: 30
+      Environment:
+        Variables:
+          LEARNHUB_API_BASE_URL: !Ref ApiBaseUrl
+          LEARNHUB_TENANT_REGISTRY: !Sub "s3://${RegistryBucket}/tenants.json"
+          LEARNHUB_RESULT_STORE_DIR: /tmp/results
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref RegistryBucket
+      FunctionUrlConfig:
+        # Callers authenticate with their client token; the function rejects unknown tokens
+        AuthType: NONE
+        Cors:
+          AllowOrigins: ["*"]
+          AllowMethods: [POST]
+          AllowHeaders: [authorization, content-type, x-client-token]
+
+Outputs:
+  McpEndpoint:
+    Description: MCP endpoint for remote clients
+    Value: !GetAtt McpFunctionUrl.FunctionUrl

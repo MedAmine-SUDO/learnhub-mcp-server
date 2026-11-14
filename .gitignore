@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+tenants.json
+.results/
+build/
+dist/
+*.zip
+.aws-sam/
