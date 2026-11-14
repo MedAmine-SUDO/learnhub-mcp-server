@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" role="img" aria-label="LearnHub MCP logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#134e4a"/>
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="42" fill="url(#bg)"/>
+  <!-- connections from the hub to three clients -->
+  <g stroke="#2dd4bf" stroke-width="7" stroke-linecap="round" fill="none" opacity="0.9">
+    <path d="M96 112 L46 150"/>
+    <path d="M96 112 L96 158"/>
+    <path d="M96 112 L146 150"/>
+  </g>
+  <g fill="#0f172a" stroke="#2dd4bf" stroke-width="6">
+    <circle cx="44" cy="152" r="11"/>
+    <circle cx="96" cy="160" r="11"/>
+    <circle cx="148" cy="152" r="11"/>
+  </g>
+  <!-- mortarboard: the LMS -->
+  <path d="M96 38 L156 64 L96 90 L36 64 Z" fill="#f8fafc"/>
+  <path d="M64 77 V98 C64 110 128 110 128 98 V77 L96 91 Z" fill="#cbd5e1"/>
+  <path d="M150 67 V92" stroke="#2dd4bf" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="150" cy="96" r="6" fill="#2dd4bf"/>
+  <circle cx="96" cy="112" r="9" fill="#2dd4bf"/>
+</svg>
