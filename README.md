@@ -113,6 +113,8 @@ flowchart LR
 | 🗂️ `list_stored_results` | Large results saved during this session |
 | 📄 `read_stored_result` | Page through a stored result (`offset`, `limit`) |
 
+Every tool is **read-only** and says so through [MCP tool annotations](https://modelcontextprotocol.io/specification/2025-06-18/server/tools) (`readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`), along with a human-readable `title`. Clients can use these hints to run the tools without asking for confirmation each time.
+
 Errors go back to the model as **tool errors** (`isError: true` plus a readable message), so the assistant can correct itself. A failed tool call doesn't break the session.
 
 <br/>
@@ -203,6 +205,7 @@ To point the stdio server at an S3 registry on Floci, set `LEARNHUB_TENANT_REGIS
 | 🏢 **Tenant isolation** | The tenant is resolved from the client token on the server, never from tool arguments, and every upstream call uses that tenant's own OAuth token. |
 | #️⃣ **Hashed client tokens** | The registry stores only SHA-256 hashes, compared in constant time. A leaked registry file holds no usable tokens. |
 | 🔑 **No credentials for the AI** | Clients hold an opaque token. Upstream client secrets stay on the server and can be rotated without touching any client. |
+| 👀 **Read-only tools** | No tool can create, change or delete LMS data, and every tool declares this through MCP annotations (`readOnlyHint`, `destructiveHint`). |
 | 🛡️ **Validated inputs** | Pydantic validates every tool call and rejects unknown fields. `result_id` values are pattern-checked, so they can't escape the result store directory. |
 | 🙈 **Safe errors** | The model sees readable error types and messages. Unexpected exceptions are logged server-side and returned as a generic error. |
 
@@ -221,7 +224,7 @@ The tests run the real mock API in-process through `httpx.ASGITransport`, so the
 - ✅ token caching and refresh, and 401 re-authentication
 - ✅ 429 and 5xx retries, and the rate limiter (with an injected clock)
 - ✅ result storage, paging and path-traversal protection
-- ✅ the Lambda JSON-RPC transport
+- ✅ the Lambda JSON-RPC transport, including tool titles and annotations
 
 <br/>
 
@@ -245,7 +248,7 @@ The tests run the real mock API in-process through `httpx.ASGITransport`, so the
 ├── src/learnhub_mcp/
 │   ├── server.py          # MCP over stdio (local transport) + shared tool-error handling
 │   ├── lambda_handler.py  # MCP JSON-RPC over HTTPS (Lambda Function URL)
-│   ├── tools.py           # Tool specs (pydantic schemas) and handlers
+│   ├── tools.py           # Tool specs (pydantic schemas, annotations) and handlers
 │   ├── api_client.py      # LMS client: auth injection, rate limiting, retries, pagination
 │   ├── auth.py            # OAuth client-credentials token manager
 │   ├── tenants.py         # Hashed-token tenant registry (file or S3)
