@@ -5,7 +5,7 @@ AI sees and the validation the server runs can never drift apart.
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -59,13 +59,18 @@ class ReadStoredResultArgs(_Args):
 
 Handler = Callable[[Tenant, Any], Awaitable[dict]]
 
+# Every tool only reads from the tenant's own LMS, so clients can call them freely
+READ_ONLY = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False}
+
 
 @dataclass(frozen=True)
 class ToolSpec:
     name: str
+    title: str
     description: str
     args_model: type[_Args]
     handler: Handler
+    annotations: dict = field(default_factory=lambda: dict(READ_ONLY))
 
     @property
     def input_schema(self) -> dict:
@@ -106,21 +111,24 @@ class ToolService:
         return [
             ToolSpec(
                 "list_users",
+                "List users",
                 "List users of your organization, optionally filtered by role, status or a "
                 "name/email search. Large result sets are stored and summarized.",
                 ListUsersArgs,
                 self._list_users,
             ),
-            ToolSpec("get_user", "Get one user's full profile by id.", GetUserArgs, self._get_user),
+            ToolSpec("get_user", "Get user", "Get one user's full profile by id.", GetUserArgs, self._get_user),
             ToolSpec(
                 "list_trainings",
+                "List trainings",
                 "List trainings (courses), optionally filtered by status or category.",
                 ListTrainingsArgs,
                 self._list_trainings,
             ),
-            ToolSpec("get_training", "Get one training's details by id.", GetTrainingArgs, self._get_training),
+            ToolSpec("get_training", "Get training", "Get one training's details by id.", GetTrainingArgs, self._get_training),
             ToolSpec(
                 "list_training_participants",
+                "List training participants",
                 "List the learners enrolled in a training with their progress and score, "
                 "optionally filtered by completion status.",
                 ListParticipantsArgs,
@@ -128,12 +136,14 @@ class ToolService:
             ),
             ToolSpec(
                 "list_stored_results",
+                "List stored results",
                 "List large results saved earlier in this session.",
                 ListStoredResultsArgs,
                 self._list_stored,
             ),
             ToolSpec(
                 "read_stored_result",
+                "Read stored result",
                 "Read a page of a stored result by result_id, using offset and limit.",
                 ReadStoredResultArgs,
                 self._read_stored,

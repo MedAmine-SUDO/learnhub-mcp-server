@@ -38,6 +38,10 @@ def test_initialize_does_not_need_a_token():
 def test_tools_list_and_call():
     _, listed = call("tools/list")
     assert len(listed["result"]["tools"]) == 7
+    for tool in listed["result"]["tools"]:
+        assert tool["title"]
+        assert tool["annotations"]["readOnlyHint"] is True
+        assert tool["annotations"]["destructiveHint"] is False
     _, called = call("tools/call", {"name": "list_trainings", "arguments": {"max_results": 3}})
     content = json.loads(called["result"]["content"][0]["text"])
     assert content["count"] == 3

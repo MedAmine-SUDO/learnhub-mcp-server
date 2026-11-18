@@ -42,7 +42,13 @@ def build_server(service: ToolService, client_token: str | None) -> Server:
     async def on_list_tools(ctx, params) -> types.ListToolsResult:
         return types.ListToolsResult(
             tools=[
-                types.Tool(name=t.name, description=t.description, input_schema=t.input_schema)
+                types.Tool(
+                    name=t.name,
+                    title=t.title,
+                    description=t.description,
+                    input_schema=t.input_schema,
+                    annotations=types.ToolAnnotations.model_validate(t.annotations),
+                )
                 for t in service.list_tools()
             ]
         )
