@@ -75,7 +75,13 @@ async def _dispatch(service, method: str, params: dict, client_token: str | None
     if method == "tools/list":
         return {
             "tools": [
-                {"name": t.name, "description": t.description, "inputSchema": t.input_schema}
+                {
+                    "name": t.name,
+                    "title": t.title,
+                    "description": t.description,
+                    "inputSchema": t.input_schema,
+                    "annotations": t.annotations,
+                }
                 for t in service.list_tools()
             ]
         }
