@@ -51,6 +51,28 @@ async def test_tenants_are_isolated(service):
         await service.call("get_user", {"user_id": acme_user["id"]}, GLOBEX)
 
 
+async def test_stored_results_are_isolated_between_tenants(service):
+    result = await service.call("list_users", {"max_results": 250}, ACME)
+    assert (await service.call("list_stored_results", {}, GLOBEX))["results"] == []
+    with pytest.raises(NotFoundError):
+        await service.call("read_stored_result", {"result_id": result["result_id"]}, GLOBEX)
+
+
+@pytest.mark.parametrize("limit", [101, 150, 250, 319])
+async def test_partial_final_page_preserves_exact_users(service, limit):
+    from mock_api.data import DATASETS
+
+    result = await service.call("list_users", {"max_results": limit}, ACME)
+    rows = []
+    for offset in range(0, limit, 200):
+        page = await service.call(
+            "read_stored_result",
+            {"result_id": result["result_id"], "offset": offset, "limit": 200}, ACME,
+        )
+        rows.extend(page["items"])
+    assert [u["id"] for u in rows] == [u["id"] for u in DATASETS[1]["users"][:limit]]
+
+
 async def test_training_details_and_participants(service):
     training = (await service.call("list_trainings", {"max_results": 1}, ACME))["items"][0]
     detail = await service.call("get_training", {"training_id": training["id"]}, ACME)
@@ -78,3 +100,22 @@ async def test_errors_become_tool_errors_for_the_model(service):
     result = await run_tool(service, "get_user", {"user_id": 1}, ACME)
     assert result.is_error is True
     assert payload(result)["error"] == "NotFoundError"
+
+
+async def test_scoped_client_token_cannot_call_other_tools(settings, tmp_path):
+    import json
+    from dataclasses import replace
+    from pathlib import Path
+
+    import httpx
+
+    from learnhub_mcp.runtime import open_service
+    from mock_api.app import app
+    registry = json.loads(Path(settings.tenant_registry).read_text())
+    registry['tenants'][0]['allowed_tools'] = ['list_trainings']
+    path = tmp_path / 'scoped.json'
+    path.write_text(json.dumps(registry))
+    async with open_service(replace(settings, tenant_registry=str(path)), transport=httpx.ASGITransport(app=app)) as scoped:
+        assert (await scoped.call('list_trainings', {'max_results': 1}, ACME))['count'] == 1
+        with pytest.raises(AuthError, match='not permitted'):
+            await scoped.call('list_users', {}, ACME)

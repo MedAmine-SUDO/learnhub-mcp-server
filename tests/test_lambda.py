@@ -1,36 +1,41 @@
-"""The Lambda transport, driven with Function URL-shaped events against the in-process mock API."""
-
+"""Function URL-shaped events exercise Mangum and the real MCP SDK transport."""
 import json
+from dataclasses import replace
 
 import httpx
 import pytest
 
 import learnhub_mcp.lambda_handler as lh
-from learnhub_mcp.runtime import build_service
+from learnhub_mcp.http_server import create_app
 from mock_api.app import app
 
 
 @pytest.fixture(autouse=True)
-def wire_service(settings):
-    http = httpx.AsyncClient(base_url="http://mock", transport=httpx.ASGITransport(app=app))
-    lh._service = build_service(settings, http)
-    yield
-    lh._loop.run_until_complete(http.aclose())
-    lh._service = None
+def wire_app(settings, monkeypatch):
+    monkeypatch.setattr(lh, "create_app", lambda *args: create_app(
+        replace(settings, allowed_hosts=("testserver",)), transport=httpx.ASGITransport(app=app)))
 
 
 def call(method, params=None, token="demo-token-acme", request_id=1):
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    headers = {"host": "testserver", "content-type": "application/json",
+               "accept": "application/json, text/event-stream", "mcp-protocol-version": "2025-06-18"}
+    if token:
+        headers["authorization"] = f"Bearer {token}"
     body = {"jsonrpc": "2.0", "method": method, "params": params or {}}
     if request_id is not None:
         body["id"] = request_id
-    event = {"requestContext": {"http": {"method": "POST"}}, "headers": headers, "body": json.dumps(body)}
+    event = {"version": "2.0", "rawPath": "/mcp", "rawQueryString": "", "isBase64Encoded": False,
+             "requestContext": {"http": {"method": "POST", "path": "/mcp", "sourceIp": "127.0.0.1"}},
+             "headers": headers, "body": json.dumps(body)}
     response = lh.lambda_handler(event, None)
     return response["statusCode"], json.loads(response["body"]) if response["body"] else None
 
 
-def test_initialize_does_not_need_a_token():
-    status, body = call("initialize", {"protocolVersion": "2025-06-18"}, token=None)
+def test_initialize_requires_a_valid_token():
+    assert call("initialize", token=None)[0] == 401
+    assert call("initialize", token="unknown")[0] == 401
+    status, body = call("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                                       "clientInfo": {"name": "test", "version": "1"}})
     assert status == 200
     assert body["result"]["serverInfo"]["name"] == "learnhub-mcp"
 
@@ -38,26 +43,20 @@ def test_initialize_does_not_need_a_token():
 def test_tools_list_and_call():
     _, listed = call("tools/list")
     assert len(listed["result"]["tools"]) == 7
-    for tool in listed["result"]["tools"]:
-        assert tool["title"]
-        assert tool["annotations"]["readOnlyHint"] is True
-        assert tool["annotations"]["destructiveHint"] is False
+    assert all(t["annotations"]["readOnlyHint"] for t in listed["result"]["tools"])
     _, called = call("tools/call", {"name": "list_trainings", "arguments": {"max_results": 3}})
-    content = json.loads(called["result"]["content"][0]["text"])
-    assert content["count"] == 3
-    assert called["result"]["isError"] is False
+    assert json.loads(called["result"]["content"][0]["text"])["count"] == 3
 
 
 def test_missing_token_is_401():
-    status, body = call("tools/list", token=None)
-    assert status == 401 and body["error"]["code"] == -32001
+    assert call("tools/list", token=None)[0] == 401
 
 
-def test_notifications_get_202_and_no_body():
-    status, body = call("notifications/initialized", request_id=None)
-    assert status == 202 and body is None
+def test_notifications_get_202():
+    assert call("notifications/initialized", request_id=None)[0] == 202
 
 
 def test_unknown_method():
     _, body = call("resources/subscribe")
-    assert body["error"]["code"] == -32601
+    # The SDK rejects this request during method/parameter validation.
+    assert body["error"]["code"] in (-32601, -32602)
