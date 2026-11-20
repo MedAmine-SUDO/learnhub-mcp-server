@@ -135,4 +135,53 @@ async def test_registry_matches_hashed_tokens_and_caches_reads():
 def test_result_store_rejects_path_traversal(tmp_path):
     store = ResultStore(tmp_path)
     with pytest.raises(ToolInputError):
-        store.read("../../etc/passwd")
+        store.read("../../etc/passwd", tenant_id=1)
+
+
+def test_result_expiry_is_enforced_without_a_cleanup_call(tmp_path):
+    from learnhub_mcp.errors import NotFoundError
+    clock = FakeClock()
+    store = ResultStore(tmp_path, ttl_hours=1, clock=clock)
+    meta = store.save("list_users", {}, [{"id": 1}], 1, tenant_id=1)
+    clock.now = 3601
+    with pytest.raises(NotFoundError):
+        store.read(meta["result_id"], tenant_id=1)
+
+
+def test_local_results_survive_worker_change_but_preserve_owner(tmp_path):
+    from learnhub_mcp.errors import NotFoundError
+    writer, reader = ResultStore(tmp_path), ResultStore(tmp_path)
+    meta = writer.save("list_users", {}, [{"id": 1}], 1, tenant_id=1)
+    assert reader.read(meta["result_id"], tenant_id=1)["items"] == [{"id": 1}]
+    assert reader.list(tenant_id=2) == []
+    with pytest.raises(NotFoundError):
+        reader.read(meta["result_id"], tenant_id=2)
+
+
+async def test_registry_uses_secret_references_and_explicit_tool_permissions():
+    secrets = []
+    def read_secret(secret_id):
+        secrets.append(secret_id)
+        return {"client_id": "c", "client_secret": "s"}
+    registry = TenantRegistry('registry', reader=lambda _: json.dumps({"tenants": [{
+        "token_sha256": hash_token('opaque'), "company_id": 7, "name": "T",
+        "credentials_secret_id": "learnhub/acme", "allowed_tools": ["list_trainings"],
+    }]}), secret_reader=read_secret)
+    tenant = await registry.resolve('opaque')
+    assert tenant.client_id == 'c' and tenant.client_secret == 's'
+    assert tenant.allowed_tools == ('list_trainings',)
+    await registry.resolve('opaque')
+    assert secrets == ['learnhub/acme']
+
+
+async def test_tool_deadline_includes_upstream_wait(settings):
+    import asyncio
+    from dataclasses import replace
+
+    from learnhub_mcp.runtime import open_service
+    async def stalled(request):
+        await asyncio.sleep(1)
+        return httpx.Response(503)
+    async with open_service(replace(settings, tool_timeout_seconds=0.01), transport=httpx.MockTransport(stalled)) as service:
+        with pytest.raises(UpstreamError, match='deadline'):
+            await service.call('list_users', {}, 'demo-token-acme')

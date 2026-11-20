@@ -1,7 +1,11 @@
 """Async LMS API client: auth injection, rate limiting, retries, pagination."""
 
 import asyncio
-from typing import Any, Awaitable, Callable
+import math
+import time
+from collections.abc import Awaitable, Callable
+from email.utils import parsedate_to_datetime
+from typing import Any
 
 import httpx
 
@@ -68,7 +72,19 @@ class LMSClient:
                         f"LMS API returned HTTP {resp.status_code} after {attempt + 1} attempts."
                     )
                 retry_after = resp.headers.get("Retry-After")
-                delay = float(retry_after) if retry_after else self._backoff * 2**attempt
+                delay = self._backoff * 2**attempt
+                if retry_after:
+                    try:
+                        delay = float(retry_after)
+                    except ValueError:
+                        try:
+                            delay = parsedate_to_datetime(retry_after).timestamp() - time.time()
+                        except (TypeError, ValueError, OverflowError):
+                            pass
+                if not math.isfinite(delay):
+                    delay = self._backoff * 2**attempt
+                # The tool deadline remains the total budget, including sleeps.
+                delay = max(0.0, delay)
                 await self._sleep(delay)
                 attempt += 1
                 continue
@@ -81,8 +97,9 @@ class LMSClient:
         items: list[dict] = []
         page = 1
         total = 0
+        # Keep the offset implied by page and page_size stable across requests.
+        page_size = min(MAX_PAGE_SIZE, max_items)
         while len(items) < max_items:
-            page_size = min(MAX_PAGE_SIZE, max_items - len(items))
             body = await self.get(tenant, path, {**(params or {}), "page": page, "page_size": page_size})
             items.extend(body["data"])
             total = body["meta"]["total"]

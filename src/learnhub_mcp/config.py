@@ -21,11 +21,27 @@ class Settings:
     token_refresh_margin_seconds: int = 60
     result_store_dir: Path = Path(".results")
     result_ttl_hours: int = 24
+    result_store_uri: str | None = None
+    tool_timeout_seconds: float = 25.0
+    http_host: str = "127.0.0.1"
+    http_port: int = 8001
+    allowed_hosts: tuple[str, ...] = ("127.0.0.1:*", "localhost:*", "127.0.0.1", "localhost")
+    allowed_origins: tuple[str, ...] = ()
     # Results bigger than either threshold are stored instead of returned inline
     inline_max_items: int = 25
     inline_max_bytes: int = 20_000
     # Used by the local stdio transport; Lambda reads it from the request header
     client_token: str | None = None
+
+    def __post_init__(self):
+        import math
+        for name in ("rate_limit_per_minute", "request_timeout_seconds", "tool_timeout_seconds",
+                     "result_ttl_hours", "inline_max_items", "inline_max_bytes", "tenant_cache_ttl_seconds"):
+            value = getattr(self, name)
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be positive and finite")
+        if self.max_retries < 0 or not 1 <= self.http_port <= 65535:
+            raise ValueError("Invalid retries or HTTP port")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -40,6 +56,12 @@ class Settings:
             token_refresh_margin_seconds=_int("LEARNHUB_TOKEN_REFRESH_MARGIN", cls.token_refresh_margin_seconds),
             result_store_dir=Path(os.getenv("LEARNHUB_RESULT_STORE_DIR", str(cls.result_store_dir))),
             result_ttl_hours=_int("LEARNHUB_RESULT_TTL_HOURS", cls.result_ttl_hours),
+            result_store_uri=os.getenv("LEARNHUB_RESULT_STORE_URI") or None,
+            tool_timeout_seconds=float(os.getenv("LEARNHUB_TOOL_TIMEOUT", cls.tool_timeout_seconds)),
+            http_host=os.getenv("LEARNHUB_HTTP_HOST", cls.http_host),
+            http_port=_int("LEARNHUB_HTTP_PORT", cls.http_port),
+            allowed_hosts=tuple(x.strip() for x in os.getenv("LEARNHUB_ALLOWED_HOSTS", ",".join(cls.allowed_hosts)).split(",") if x.strip()),
+            allowed_origins=tuple(x.strip() for x in os.getenv("LEARNHUB_ALLOWED_ORIGINS", "").split(",") if x.strip()),
             inline_max_items=_int("LEARNHUB_INLINE_MAX_ITEMS", cls.inline_max_items),
             inline_max_bytes=_int("LEARNHUB_INLINE_MAX_BYTES", cls.inline_max_bytes),
             client_token=os.getenv("LEARNHUB_CLIENT_TOKEN") or None,
