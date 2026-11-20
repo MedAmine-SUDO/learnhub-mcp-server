@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — prepared 20 November 2026
+## 0.2.0 — 20 November 2026
 
 ### Correctness and security
 

@@ -1,6 +1,6 @@
 # Verification record — 20 November 2026
 
-Version under preparation: **0.2.0**. All learner data and tokens used below were fictional. This is implementation evidence, not customer adoption, a penetration-test certification or a claim that every assistant supports the same configuration.
+Version: **0.2.0**. All learner data and tokens used below were fictional. This is implementation evidence, not customer adoption, a penetration-test certification or a claim that every assistant supports the same configuration.
 
 ## Automated checks
 

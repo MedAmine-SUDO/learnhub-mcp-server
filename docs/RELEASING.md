@@ -1,6 +1,6 @@
 # Releasing LearnHub
 
-The next release is **0.2.0**, a beta reference implementation with fictional LMS data.
+This checklist covers **0.2.0**, a beta reference implementation with fictional LMS data.
 The repository, wheel and source archive support Python 3.11 and 3.12 as verified
 below. Real AWS/account permissions and a customer's API require a separate
 integration acceptance check; see [verification boundaries](VERIFICATION.md).
