@@ -54,7 +54,7 @@ async def main() -> None:
              f"too big for the context window -> stored as {res['result_id']} (5-row preview)")
 
         page, _ = await call(session, "read_stored_result", {"result_id": res["result_id"], "offset": 295, "limit": 10})
-        show(f'read_stored_result {{"offset": 295, "limit": 10}}',
+        show('read_stored_result {"offset": 295, "limit": 10}',
              f"{page['returned']} rows, has_more={page['has_more']}")
 
         training, _ = await call(session, "list_trainings", {"status": "published", "max_results": 1})

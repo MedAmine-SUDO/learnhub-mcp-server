@@ -1,43 +1,88 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: LearnHub MCP server - MCP JSON-RPC over a Lambda Function URL
-
+Description: LearnHub MCP - SDK Streamable HTTP with tenant-owned S3 results
 Parameters:
   ApiBaseUrl:
     Type: String
-    Description: Base URL of the LMS API
-  RegistryBucket:
+    Description: HTTPS URL of your adapted LMS API
+    AllowedPattern: "https://.+"
+  CredentialsSecretArn:
     Type: String
-    Description: S3 bucket holding tenants.json (hashed client tokens -> tenant credentials)
-
+    Description: Exact Secrets Manager ARN containing client_id and client_secret
 Resources:
+  RegistryBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+  ResultsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireResultSnapshots
+            Status: Enabled
+            Prefix: results/
+            ExpirationInDays: 1
   McpFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: learnhub-mcp
       CodeUri: ../build/lambda.zip
       Handler: learnhub_mcp.lambda_handler.lambda_handler
       Runtime: python3.12
       Architectures: [x86_64]
       MemorySize: 512
       Timeout: 30
+      ReservedConcurrentExecutions: 1
       Environment:
         Variables:
           LEARNHUB_API_BASE_URL: !Ref ApiBaseUrl
           LEARNHUB_TENANT_REGISTRY: !Sub "s3://${RegistryBucket}/tenants.json"
-          LEARNHUB_RESULT_STORE_DIR: /tmp/results
+          LEARNHUB_RESULT_STORE_URI: !Sub "s3://${ResultsBucket}/results"
+          LEARNHUB_TOOL_TIMEOUT: "25"
       Policies:
-        - S3ReadPolicy:
-            BucketName: !Ref RegistryBucket
+        - Statement:
+            - Effect: Allow
+              Action: [s3:GetObject]
+              Resource: !Sub "${RegistryBucket.Arn}/tenants.json"
+            - Effect: Allow
+              Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+              Resource: !Sub "${ResultsBucket.Arn}/results/*"
+            - Effect: Allow
+              Action: [s3:ListBucket]
+              Resource: !GetAtt ResultsBucket.Arn
+              Condition:
+                StringLike:
+                  s3:prefix: ["results/*"]
+            - Effect: Allow
+              Action: [secretsmanager:GetSecretValue]
+              Resource: !Ref CredentialsSecretArn
       FunctionUrlConfig:
-        # Callers authenticate with their client token; the function rejects unknown tokens
         AuthType: NONE
-        Cors:
-          AllowOrigins: ["*"]
-          AllowMethods: [POST]
-          AllowHeaders: [authorization, content-type, x-client-token]
-
+        # Application Bearer authentication is enforced for every MCP request.
+        # No browser CORS is enabled by default.
 Outputs:
   McpEndpoint:
-    Description: MCP endpoint for remote clients
-    Value: !GetAtt McpFunctionUrl.FunctionUrl
+    Value: !Sub "${McpFunctionUrl.FunctionUrl}mcp"
+  RegistryBucketName:
+    Value: !Ref RegistryBucket
+  ResultsBucketName:
+    Value: !Ref ResultsBucket

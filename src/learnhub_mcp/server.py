@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import sys
+from collections.abc import Callable
 
 from mcp import types
 from mcp.server.lowlevel import Server
@@ -17,6 +18,8 @@ from .tools import ToolService
 
 # stdout carries the MCP protocol, so logs must go to stderr
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpx2").setLevel(logging.WARNING)
 logger = logging.getLogger("learnhub_mcp")
 
 
@@ -38,7 +41,7 @@ async def run_tool(service: ToolService, name: str, arguments: dict | None, clie
         return tool_result({"error": "InternalError", "message": "Unexpected server error."}, is_error=True)
 
 
-def build_server(service: ToolService, client_token: str | None) -> Server:
+def build_server(service: ToolService, client_token: str | None | Callable[[], str | None]) -> Server:
     async def on_list_tools(ctx, params) -> types.ListToolsResult:
         return types.ListToolsResult(
             tools=[
@@ -54,7 +57,8 @@ def build_server(service: ToolService, client_token: str | None) -> Server:
         )
 
     async def on_call_tool(ctx, params: types.CallToolRequestParams) -> types.CallToolResult:
-        return await run_tool(service, params.name, params.arguments, client_token)
+        token = client_token() if callable(client_token) else client_token
+        return await run_tool(service, params.name, params.arguments, token)
 
     return Server(
         "learnhub-mcp",

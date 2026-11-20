@@ -1,7 +1,7 @@
 import asyncio
 import time
 from collections import deque
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 
 class SlidingWindowRateLimiter:
