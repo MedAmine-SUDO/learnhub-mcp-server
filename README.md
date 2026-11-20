@@ -15,9 +15,9 @@ Python · MCP SDK 2.x · stdio + Streamable HTTP · AWS Lambda · tenant-owned r
 
 Ask: **“Which learners haven't started a published Security course? Show five and tell me how many there are.”** The assistant can discover a course, filter its participants and answer from API data. It can follow up without receiving the whole learner directory.
 
-[![Actual assistant workflow with fictional data](docs/demo/assistant-workflow.png)](docs/demo/assistant-workflow.mp4)
+https://github.com/user-attachments/assets/8f619a83-709e-40b0-b46e-e26778f71fb5
 
-[Watch the captured assistant run](docs/demo/assistant-workflow.mp4) · [Inspect its tool transcript](docs/demo/transcript.json). The video records a live verification viewer of Claude Code events, not the Claude Desktop interface.
+[Video file](docs/demo/assistant-workflow.mp4) · [Inspect its tool transcript](docs/demo/transcript.json). The video records a live verification viewer of Claude Code events, not the Claude Desktop interface.
 
 ## Why this project
 
