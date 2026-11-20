@@ -4,14 +4,18 @@ Each tool's JSON schema is generated from a pydantic model, so the schema the
 AI sees and the validation the server runs can never drift apart.
 """
 
+import asyncio
 import json
+import logging
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .api_client import LMSClient
-from .errors import ToolInputError
+from .errors import AuthError, ToolInputError, UpstreamError
 from .result_store import ResultStore
 from .tenants import Tenant, TenantRegistry
 
@@ -59,7 +63,7 @@ class ReadStoredResultArgs(_Args):
 
 Handler = Callable[[Tenant, Any], Awaitable[dict]]
 
-# Every tool only reads from the tenant's own LMS, so clients can call them freely
+# These annotations describe behavior; authorization is enforced separately.
 READ_ONLY = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False}
 
 
@@ -85,16 +89,21 @@ class ToolService:
         store: ResultStore,
         inline_max_items: int = 25,
         inline_max_bytes: int = 20_000,
+        tool_timeout_seconds: float = 25.0,
     ):
         self._registry = registry
         self._client = client
         self._store = store
         self._inline_max_items = inline_max_items
         self._inline_max_bytes = inline_max_bytes
+        self._tool_timeout = tool_timeout_seconds
         self._tools = {spec.name: spec for spec in self._specs()}
 
     def list_tools(self) -> list[ToolSpec]:
         return list(self._tools.values())
+
+    async def authenticate(self, client_token: str | None) -> Tenant:
+        return await self._registry.resolve(client_token)
 
     async def call(self, name: str, arguments: dict | None, client_token: str | None) -> dict:
         spec = self._tools.get(name)
@@ -104,8 +113,25 @@ class ToolService:
             args = spec.args_model.model_validate(arguments or {})
         except ValidationError as exc:
             raise ToolInputError(f"Invalid arguments for {name}: {exc.errors(include_url=False)}") from exc
-        tenant = await self._registry.resolve(client_token)
-        return await spec.handler(tenant, args)
+        started = time.monotonic()
+        tenant = None
+        outcome = "error"
+        try:
+            async with asyncio.timeout(self._tool_timeout):
+                tenant = await self.authenticate(client_token)
+                if tenant.allowed_tools is not None and name not in tenant.allowed_tools:
+                    raise AuthError("This client token is not permitted to use this tool.")
+                result = await spec.handler(tenant, args)
+                outcome = "success"
+                return result
+        except TimeoutError as exc:
+            raise UpstreamError("Tool deadline exceeded. Narrow the query or retry later.") from exc
+        finally:
+            logging.getLogger("learnhub_mcp.audit").info(json.dumps({
+                "event": "tool_call", "tool": name,
+                "tenant_id": tenant.company_id if tenant else None, "outcome": outcome,
+                "duration_ms": round((time.monotonic() - started) * 1000, 2),
+            }))
 
     def _specs(self) -> list[ToolSpec]:
         return [
@@ -137,7 +163,7 @@ class ToolService:
             ToolSpec(
                 "list_stored_results",
                 "List stored results",
-                "List large results saved earlier in this session.",
+                "List unexpired large results owned by your organization.",
                 ListStoredResultsArgs,
                 self._list_stored,
             ),
@@ -153,7 +179,7 @@ class ToolService:
     async def _list_users(self, tenant: Tenant, a: ListUsersArgs) -> dict:
         params = {"role": a.role, "status": a.status, "search": a.search}
         items, total = await self._client.paginate(tenant, "/v1/users", params, a.max_results)
-        return self._shape("list_users", a, items, total)
+        return await self._shape(tenant, "list_users", a, items, total)
 
     async def _get_user(self, tenant: Tenant, a: GetUserArgs) -> dict:
         return await self._client.get(tenant, f"/v1/users/{a.user_id}")
@@ -161,7 +187,7 @@ class ToolService:
     async def _list_trainings(self, tenant: Tenant, a: ListTrainingsArgs) -> dict:
         params = {"status": a.status, "category": a.category}
         items, total = await self._client.paginate(tenant, "/v1/trainings", params, a.max_results)
-        return self._shape("list_trainings", a, items, total)
+        return await self._shape(tenant, "list_trainings", a, items, total)
 
     async def _get_training(self, tenant: Tenant, a: GetTrainingArgs) -> dict:
         return await self._client.get(tenant, f"/v1/trainings/{a.training_id}")
@@ -169,20 +195,25 @@ class ToolService:
     async def _list_participants(self, tenant: Tenant, a: ListParticipantsArgs) -> dict:
         path = f"/v1/trainings/{a.training_id}/participants"
         items, total = await self._client.paginate(tenant, path, {"completion": a.completion}, a.max_results)
-        return self._shape("list_training_participants", a, items, total)
+        return await self._shape(tenant, "list_training_participants", a, items, total)
 
     async def _list_stored(self, tenant: Tenant, a: ListStoredResultsArgs) -> dict:
-        return {"results": self._store.list()}
+        return {"results": await asyncio.to_thread(self._store.list, tenant_id=tenant.company_id)}
 
     async def _read_stored(self, tenant: Tenant, a: ReadStoredResultArgs) -> dict:
-        return self._store.read(a.result_id, a.offset, a.limit)
+        return await asyncio.to_thread(
+            self._store.read, a.result_id, a.offset, a.limit, tenant_id=tenant.company_id
+        )
 
-    def _shape(self, tool: str, args: _Args, items: list[dict], total: int) -> dict:
+    async def _shape(self, tenant: Tenant, tool: str, args: _Args, items: list[dict], total: int) -> dict:
         """Return small results inline; store big ones and return a summary."""
-        size = len(json.dumps(items))
+        size = len(json.dumps(items, ensure_ascii=False).encode("utf-8"))
         if len(items) <= self._inline_max_items and size <= self._inline_max_bytes:
             return {"count": len(items), "total_available": total, "items": items}
-        meta = self._store.save(tool, args.model_dump(exclude_none=True), items, total)
+        meta = await asyncio.to_thread(
+            self._store.save, tool, args.model_dump(exclude_none=True), items, total,
+            tenant_id=tenant.company_id,
+        )
         return {
             "stored": True,
             "result_id": meta["result_id"],

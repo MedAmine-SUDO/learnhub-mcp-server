@@ -1,12 +1,12 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 import httpx
 
 from .api_client import LMSClient
 from .auth import OAuthTokenManager
 from .config import Settings
-from .result_store import ResultStore
+from .result_store import ResultStore, S3ResultStore
 from .tenants import TenantRegistry
 from .tools import ToolService
 
@@ -21,9 +21,11 @@ def build_service(settings: Settings, http: httpx.AsyncClient) -> ToolService:
             rate_limit_per_minute=settings.rate_limit_per_minute,
             max_retries=settings.max_retries,
         ),
-        store=ResultStore(settings.result_store_dir, settings.result_ttl_hours),
+        store=(S3ResultStore(settings.result_store_uri, settings.result_ttl_hours)
+               if settings.result_store_uri else ResultStore(settings.result_store_dir, settings.result_ttl_hours)),
         inline_max_items=settings.inline_max_items,
         inline_max_bytes=settings.inline_max_bytes,
+        tool_timeout_seconds=settings.tool_timeout_seconds,
     )
 
 

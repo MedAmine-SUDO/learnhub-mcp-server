@@ -1,0 +1,80 @@
+{
+  "label": "Actual assistant execution with fictional LMS data",
+  "prompt": "Using LearnHub only, find the first published course in category Security. For that course, which learners have not started? Show at most five names and state the total matching learner count. Then verify that total using a follow-up request fetching at most one participant, and explain how you got the total. Do not list the whole user directory. Make real tool calls; do not guess. This LMS contains fictional demo data.",
+  "events": [
+    {
+      "type": "tool_call",
+      "name": "mcp__learnhub__list_trainings",
+      "arguments": {
+        "category": "Security",
+        "status": "published",
+        "max_results": 5
+      },
+      "elapsed_seconds": 7.785
+    },
+    {
+      "type": "tool_result",
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"count\": 5, \"total_available\": 5, \"items\": [{\"id\": 15002, \"title\": \"Security Advanced Workshop\", \"category\": \"Security\", \"status\": \"published\", \"duration_hours\": 4, \"instructor_id\": 10035, \"created_at\": \"2025-03-19\"}, {\"id\": 15006, \"title\": \"Security Advanced Workshop\", \"category\": \"Security\", \"status\": \"published\", \"duration_hours\": 4, \"instructor_id\": 10266, \"created_at\": \"2025-05-04\"}, {\"id\": 15017, \"title\": \"Security Fundamentals\", \"category\": \"Security\", \"status\": \"published\", \"duration_hours\": 1, \"instructor_id\": 10266, \"created_at\": \"2025-05-20\"}, {\"id\": 15026, \"title\": \"Security Fundamentals\", \"category\": \"Security\", \"status\": \"published\", \"duration_hours\": 8, \"instructor_id\": 10148, \"created_at\": \"2024-06-02\"}, {\"id\": 15043, \"title\": \"Security Advanced Workshop\", \"category\": \"Security\", \"status\": \"published\", \"duration_hours\": 1, \"instructor_id\": 10266, \"created_at\": \"2025-03-28\"}]}"
+        }
+      ],
+      "is_error": false,
+      "elapsed_seconds": 7.875
+    },
+    {
+      "type": "tool_call",
+      "name": "mcp__learnhub__list_training_participants",
+      "arguments": {
+        "training_id": 15002,
+        "completion": "not_started",
+        "max_results": 5
+      },
+      "elapsed_seconds": 14.877
+    },
+    {
+      "type": "tool_result",
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"count\": 5, \"total_available\": 16, \"items\": [{\"training_id\": 15002, \"user_id\": 10013, \"progress_pct\": 0, \"completion\": \"not_started\", \"score\": null, \"name\": \"Lea Khelifi\", \"email\": \"lea.khelifi13@acme.example\"}, {\"training_id\": 15002, \"user_id\": 10288, \"progress_pct\": 0, \"completion\": \"not_started\", \"score\": null, \"name\": \"Ines Dubois\", \"email\": \"ines.dubois288@acme.example\"}, {\"training_id\": 15002, \"user_id\": 10212, \"progress_pct\": 0, \"completion\": \"not_started\", \"score\": null, \"name\": \"Omar Petit\", \"email\": \"omar.petit212@acme.example\"}, {\"training_id\": 15002, \"user_id\": 10110, \"progress_pct\": 0, \"completion\": \"not_started\", \"score\": null, \"name\": \"Omar Benali\", \"email\": \"omar.benali110@acme.example\"}, {\"training_id\": 15002, \"user_id\": 10202, \"progress_pct\": 0, \"completion\": \"not_started\", \"score\": null, \"name\": \"Malik Petit\", \"email\": \"malik.petit202@acme.example\"}]}"
+        }
+      ],
+      "is_error": false,
+      "elapsed_seconds": 14.921
+    },
+    {
+      "type": "tool_call",
+      "name": "mcp__learnhub__list_training_participants",
+      "arguments": {
+        "training_id": 15002,
+        "completion": "not_started",
+        "max_results": 1
+      },
+      "elapsed_seconds": 15.431
+    },
+    {
+      "type": "tool_result",
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"count\": 1, \"total_available\": 16, \"items\": [{\"training_id\": 15002, \"user_id\": 10013, \"progress_pct\": 0, \"completion\": \"not_started\", \"score\": null, \"name\": \"Lea Khelifi\", \"email\": \"lea.khelifi13@acme.example\"}]}"
+        }
+      ],
+      "is_error": false,
+      "elapsed_seconds": 15.49
+    },
+    {
+      "type": "answer",
+      "text": "**Course:** I took the first result from the published Security courses list: **Security Advanced Workshop** (ID 15002, created 2025-03-19). Five published Security courses matched. \"First\" could also mean the oldest one. That would be **Security Fundamentals** (ID 15026, created 2024-06-02), which came fourth in the list. I didn't check that course.\n\n**Learners who haven't started (5 shown out of 16 total):**\n1. Lea Khelifi\n2. Ines Dubois\n3. Omar Petit\n4. Omar Benali\n5. Malik Petit\n\n**Total: 16 learners haven't started.**\n\n**How I got and checked the total:**\n- I asked for participants in course 15002 with the \"not started\" filter and a limit of 5. It returned 5 rows (`count: 5`) and said 16 matched in total (`total_available: 16`). So 5 is just the number shown, and 16 is the real total.\n- To check, I ran the same filtered request with a limit of 1. It returned 1 row (Lea Khelifi) and again said 16 matched in total. The total didn't change with the row limit, so 16 is the actual number of matching learners, not a page size.\n- I didn't list or search the user directory. Everything came from the course's participant list.",
+      "elapsed_seconds": 30.558
+    },
+    {
+      "type": "completion",
+      "is_error": false,
+      "result": "**Course:** I took the first result from the published Security courses list: **Security Advanced Workshop** (ID 15002, created 2025-03-19). Five published Security courses matched. \"First\" could also mean the oldest one. That would be **Security Fundamentals** (ID 15026, created 2024-06-02), which came fourth in the list. I didn't check that course.\n\n**Learners who haven't started (5 shown out of 16 total):**\n1. Lea Khelifi\n2. Ines Dubois\n3. Omar Petit\n4. Omar Benali\n5. Malik Petit\n\n**Total: 16 learners haven't started.**\n\n**How I got and checked the total:**\n- I asked for participants in course 15002 with the \"not started\" filter and a limit of 5. It returned 5 rows (`count: 5`) and said 16 matched in total (`total_available: 16`). So 5 is just the number shown, and 16 is the real total.\n- To check, I ran the same filtered request with a limit of 1. It returned 1 row (Lea Khelifi) and again said 16 matched in total. The total didn't change with the row limit, so 16 is the actual number of matching learners, not a page size.\n- I didn't list or search the user directory. Everything came from the course's participant list.",
+      "elapsed_seconds": 30.6
+    }
+  ]
+}
