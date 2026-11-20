@@ -1,11 +1,19 @@
 [project]
 name = "learnhub-mcp-server"
 version = "0.2.0"
-description = "Multi-tenant MCP server that gives AI assistants safe, rate-limited access to an LMS REST API (local stdio + AWS Lambda)."
+description = "Multi-tenant MCP server that gives AI assistants safe, rate-limited access to an LMS REST API (stdio, Streamable HTTP and AWS Lambda)."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Mohamed Amine Ben Afia" }]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
 dependencies = [
     "mcp>=2.3,<3",
     "httpx>=0.27",
@@ -14,6 +22,12 @@ dependencies = [
     "starlette>=0.40,<2",
     "uvicorn>=0.29,<1",
 ]
+
+[project.urls]
+Repository = "https://github.com/MedAmine-SUDO/learnhub-mcp-server"
+Documentation = "https://github.com/MedAmine-SUDO/learnhub-mcp-server#readme"
+Issues = "https://github.com/MedAmine-SUDO/learnhub-mcp-server/issues"
+Changelog = "https://github.com/MedAmine-SUDO/learnhub-mcp-server/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 s3 = ["boto3>=1.34"]
@@ -30,7 +44,7 @@ learnhub-hash-token = "learnhub_mcp.tenants:hash_token_cli"
 dev = ["pytest>=8", "fastapi>=0.110", "uvicorn>=0.29", "boto3>=1.34", "mangum>=0.19,<1"]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]

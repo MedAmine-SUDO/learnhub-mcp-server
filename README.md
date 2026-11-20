@@ -159,7 +159,7 @@ uv sync --locked --extra aws --extra mock
 uv run pytest -q
 ```
 
-Tests cover tenant-owned snapshots, partial final pages, expiry, OAuth refresh, retries, permissions, deadlines, HTTP security, Lambda-shaped events and S3 request behavior. CI runs on Python 3.11 and 3.12. The build uses the locked dependencies with the AWS extra included.
+Tests cover tenant-owned snapshots, partial final pages, expiry, OAuth refresh, retries, permissions, deadlines, HTTP security, Lambda-shaped events and S3 request behavior. CI runs on Python 3.11 and 3.12, installs and exercises the built wheel outside the checkout, and builds the Linux/Python 3.12 Lambda zip with locked AWS dependencies. See the [release checklist](docs/RELEASING.md) for artifact checks, migration notes and publishing steps.
 
 ## Working with me
 

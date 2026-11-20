@@ -18,6 +18,21 @@ uv run --isolated --locked --python 3.12 --extra aws --extra mock pytest -q
 ./deploy/build_lambda.sh
 ```
 
+## Release artifact checks
+
+Release preparation on 20 November 2026 additionally verified:
+
+- Re-ran all 42 tests in isolated locked Python 3.11 and 3.12 environments.
+- Built the 0.2.0 source archive and built its wheel from that archive, with workspace sources disabled.
+- Installed the wheel into a fresh Python 3.12 environment outside the checkout. The base install imports the stdio/HTTP entry points and has a matching distribution/server version; AWS/mock extras install without dependency conflicts.
+- Exercised all four installed console commands, stdio initialization/discovery and a list call, a denied foreign-user lookup, authenticated HTTP initialization/tool use and rejection of unauthenticated HTTP initialization. The smoke check starts and cleans up its own fictional mock API and HTTP server.
+- Passed strict Twine metadata/README checks for both distributions and rebuilt the locked Linux x86_64/Python 3.12 Lambda zip.
+
+Run `bash scripts/check_distribution.sh` for the installed-wheel check. The
+[release checklist](RELEASING.md) includes all commands and publishing steps.
+These are local artifact checks; the account/deployment-specific limits below
+still apply.
+
 ## Client and transport evidence
 
 | Path | Evidence | Boundary |

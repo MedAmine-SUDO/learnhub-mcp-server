@@ -21,6 +21,12 @@
 - Rewrite the README and add adaptation, deployment, security and verification guides.
 - Add a training-manager workflow example, a restricted real-assistant runner and an actual captured Claude Code/HTTP workflow with fictional data.
 
+### Release preparation
+
+- Add distribution metadata with repository, documentation, issue and changelog links, an SPDX license expression and explicit license-file inclusion.
+- Build the wheel from its source archive and verify fresh base/AWS/mock installations outside the checkout, including installed CLI commands, stdio, HTTP authentication and tenant rejection.
+- Extend CI with distribution and Lambda builds, downloadable artifacts, manual dispatch and version-tag validation. Document the release and publication checklist.
+
 ### Migration notes
 
 - Remote clients must use `/mcp` and authenticate initialization/discovery, which were partly public in 0.1.0. `X-Client-Token` is no longer accepted; use `Authorization: Bearer ...`.
