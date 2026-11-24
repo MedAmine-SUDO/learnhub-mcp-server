@@ -9,3 +9,4 @@ build/
 dist/
 *.zip
 .aws-sam/
+.coverage

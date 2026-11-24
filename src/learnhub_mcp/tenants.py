@@ -1,7 +1,9 @@
-"""Tenant registry: maps a client token to the tenant's API credentials.
+"""Tenant registry: maps a client token to the tenant, its data source and its credentials.
 
 Client tokens are hashed. Upstream credentials may be inline for the demo;
-production entries should use a Secrets Manager reference instead.
+production entries should use a Secrets Manager reference instead. Which credentials a
+tenant needs depends on its data source's auth type (see sources/config.py): for example
+client_id + client_secret for OAuth client credentials, api_key for an API key.
 """
 
 import asyncio
@@ -10,8 +12,8 @@ import hmac
 import json
 import sys
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .errors import AuthError
@@ -21,9 +23,13 @@ from .errors import AuthError
 class Tenant:
     company_id: int
     name: str
-    client_id: str
-    client_secret: str
+    credentials: Mapping[str, str] = field(default_factory=dict, repr=False)
     allowed_tools: tuple[str, ...] | None = None
+    source: str = "default"  # the data source this tenant's data comes from
+
+    def credential(self, key: str) -> str | None:
+        value = self.credentials.get(key)
+        return str(value) if value is not None else None
 
 
 def _read_secret(secret_id: str) -> dict:
@@ -86,7 +92,14 @@ class TenantRegistry:
         entries = json.loads(raw)["tenants"]
         parsed = {}
         for e in entries:
-            credentials = self._secret_reader(e["credentials_secret_id"]) if "credentials_secret_id" in e else e
+            if "credentials_secret_id" in e:
+                credentials = self._secret_reader(e["credentials_secret_id"])
+            elif "credentials" in e:
+                credentials = e["credentials"]
+            else:  # 0.2 format: client_id / client_secret at the top level
+                credentials = {k: e[k] for k in ("client_id", "client_secret") if k in e}
+            if not isinstance(credentials, dict):
+                raise ValueError("credentials must be an object")
             if int(e["company_id"]) < 1:
                 raise ValueError("company_id must be a positive, unique upstream tenant identity")
             if e["token_sha256"] in parsed:
@@ -96,9 +109,9 @@ class TenantRegistry:
             parsed[e["token_sha256"]] = Tenant(
                 company_id=int(e["company_id"]),
                 name=e["name"],
-                client_id=credentials["client_id"],
-                client_secret=credentials["client_secret"],
+                credentials={str(k): str(v) for k, v in credentials.items()},
                 allowed_tools=tuple(e["allowed_tools"]) if "allowed_tools" in e else None,
+                source=str(e.get("source", "default")),
             )
         return parsed
 

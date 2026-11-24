@@ -1,6 +1,6 @@
-# Adapt LearnHub to your SaaS API
+# Connect LearnHub MCP to your LMS
 
-This is an integration reference, not a universal LMS adapter. Start with one real API and one useful workflow. Keep all examples and screenshots fictional until the customer's data handling requirements are agreed.
+The server's tools are fixed (users, trainings, participants); where the data comes from is configuration. Start with one real API or database and one useful workflow. Keep all examples and screenshots fictional until the customer's data handling requirements are agreed.
 
 ## 1. Define the user and outcome
 
@@ -8,21 +8,78 @@ Example: a trusted training administrator asks which learners have not started a
 
 Document three questions the integration must answer, the intended caller, permitted fields, expected results and the API endpoints needed. Do not expose the whole API by default.
 
-## 2. Map the upstream contract
+## 2. Connect the data source (configuration, no code)
 
-The demo expects:
+Write a sources file and point `LEARNHUB_SOURCES` at it (a local path or `s3://bucket/key`). [examples/sources.example.yaml](../examples/sources.example.yaml) has a complete REST source and a complete SQL source; both are run by the tests. Without a sources file, the `learnhub` preset describes the bundled mock API.
 
-- `POST /oauth/token`, form fields `grant_type=client_credentials`, `client_id`, `client_secret`; response `access_token`, `expires_in` in seconds.
-- `GET /v1/users` and `/v1/users/{id}`.
-- `GET /v1/trainings` and `/v1/trainings/{id}`.
-- `GET /v1/trainings/{id}/participants`.
-- Lists accept one-based `page` and stable `page_size` up to 100.
-- Lists return `{"data": [...], "meta": {"total": 320, "total_pages": 4}}`.
-- OAuth credentials are scoped upstream to one organization; IDs from another organization must be rejected by the API.
+The tools map to five **operations**. Configure the ones the organization's data supports; the others answer with a clear error.
 
-Change `auth.py` for the OAuth path, authentication style, scopes and response format. Change `api_client.py` for pagination and response normalization. Change `tools.py` for paths, filters, input models and output fields. Keep these changes behind the shared service so both transports use them.
+| Operation | Tool | Filters | Needs |
+|---|---|---|---|
+| `list_users` | `list_users` | `role`, `status`, `search` | |
+| `get_user` | `get_user` | | `{id}` / `:id` |
+| `list_trainings` | `list_trainings` | `status`, `category` | |
+| `get_training` | `get_training` | | `{id}` / `:id` |
+| `list_participants` | `list_training_participants` | `completion` | `{training_id}` / `:training_id` |
 
-For a cursor-based API, replace the page traversal with cursor traversal. Do not translate a cursor into an invented numeric page. Test an empty response, one page, a partial last page and a cap that is not a multiple of page size.
+### A REST API
+
+```yaml
+sources:
+  default:
+    type: rest
+    base_url: env:LMS_API_URL
+    auth: { type: oauth_client_credentials, token_url: /oauth/token, scope: read }
+    pagination: { type: page, page_param: page, size_param: page_size, total_pages: meta.total_pages, max_page_size: 100 }
+    operations:
+      list_users:
+        path: /v1/users
+        items: data              # dotted path to the list in the response
+        total: meta.total        # dotted path to the total (optional: without it, totals are unknown)
+        params: { role: role, status: status, search: q }
+        fields: { first_name: firstName }                # our name: their name
+        values: { role: { learner: student } }           # our word: their word (filters and records)
+      get_user: { path: "/v1/users/{id}", item: data }   # item: where the record is ("" = the body)
+```
+
+- **auth**: `oauth_client_credentials` (tenant credentials `client_id`, `client_secret`; token cached per tenant, refreshed before expiry and once after a 401), `bearer` (`token`), `api_key` (`api_key`, sent in `header`), `basic` (`username`, `password`), `none`.
+- **pagination**: `page` (stops at a short page or `total_pages`), `offset` (`offset_param`, `limit_param`; stops at a short page or the total), `cursor` (`cursor_param`, `next_cursor` path, `limit_param`; a repeating cursor is an error, not a loop), `none`. The page size stays the same for the whole traversal, so offsets stay exact when a cap isn't a multiple of it.
+- **fields** and **values** translate both ways: filters are sent in the source's words, records come back in ours. Fields that aren't listed are passed through unchanged.
+- Retries (429 with `Retry-After`, 5xx, network errors), per-tenant rate limiting and the tool deadline apply to every REST source.
+
+Test an empty response, one page, a partial last page and a cap that is not a multiple of the page size against the real API before a pilot.
+
+### A database
+
+```yaml
+sources:
+  warehouse:
+    type: sql
+    url: env:WAREHOUSE_DB_URL       # install: learnhub-mcp-server[sql] + the database driver
+    operations:
+      list_trainings:
+        query: >
+          SELECT id, title, category, status FROM trainings
+          WHERE company_id = :tenant_id
+            AND (:status IS NULL OR status = :status)
+            AND (:category IS NULL OR lower(category) = lower(:category))
+          ORDER BY id
+        fields: { title: course_name }   # our name: column name, if they differ
+```
+
+- Parameters: `:tenant_id` (the tenant's `company_id`), the operation's filters (NULL when not given), `:id` / `:training_id`. They are always bound, never formatted into SQL.
+- One `SELECT` (or `WITH ... SELECT`) per operation; anything else is refused when the file is loaded. Queries must filter by `:tenant_id` unless the source sets `single_tenant: true` (one database per organization; a tenant credential `database_url` then points each tenant at its own database).
+- Connections are read-only where the database allows it (SQLite `query_only`, Postgres read-only transactions). Still connect with a database user that can only read the needed tables or views.
+- Add `ORDER BY` for stable results. Totals come from `COUNT(*)` over the same query.
+
+### Credentials per tenant
+
+```json
+{"token_sha256": "...", "company_id": 7, "name": "Example", "source": "default",
+ "credentials": {"api_key": "..."}}
+```
+
+`credentials` can also come from a Secrets Manager reference (`credentials_secret_id`), which is the production choice. The 0.2 format (`client_id` and `client_secret` at the top level) still works.
 
 ## 3. Register an organization
 

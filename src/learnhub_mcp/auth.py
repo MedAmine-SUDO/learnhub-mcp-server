@@ -24,9 +24,11 @@ class OAuthTokenManager:
         token_path: str = "/oauth/token",
         refresh_margin_seconds: int = 60,
         clock: Callable[[], float] = time.monotonic,
+        scope: str | None = None,
     ):
         self._http = http
         self._token_path = token_path
+        self._scope = scope
         self._margin = refresh_margin_seconds
         self._clock = clock
         self._cache: dict[int, _CachedToken] = {}
@@ -47,15 +49,14 @@ class OAuthTokenManager:
         self._cache.pop(tenant.company_id, None)
 
     async def _fetch(self, tenant: Tenant) -> _CachedToken:
+        client_id, secret = tenant.credential("client_id"), tenant.credential("client_secret")
+        if not client_id or not secret:
+            raise AuthError("This organization has no client_id/client_secret for its data source.")
+        form = {"grant_type": "client_credentials", "client_id": client_id, "client_secret": secret}
+        if self._scope:
+            form["scope"] = self._scope
         try:
-            resp = await self._http.post(
-                self._token_path,
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": tenant.client_id,
-                    "client_secret": tenant.client_secret,
-                },
-            )
+            resp = await self._http.post(self._token_path, data=form)
         except httpx.HTTPError as exc:
             raise UpstreamError(f"OAuth server unreachable: {exc.__class__.__name__}") from exc
         if resp.status_code in (400, 401):

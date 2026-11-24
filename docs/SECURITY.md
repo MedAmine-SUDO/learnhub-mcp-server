@@ -6,6 +6,10 @@ The client presents an opaque organization token. The registry matches its SHA-2
 
 Read-only annotations describe tool behavior, not security policy. `allowed_tools` is enforced server-side for each tool call. This repository assumes trusted organization administrators; it does not implement learner-level access control. Multiple tokens for the same company can read the same organization's snapshots.
 
+## Data sources
+
+Sources files are configuration, not secrets: credentials belong to tenants (registry or Secrets Manager) and environment variables. A REST source only calls the configured paths, with the tenant's own credentials, so the upstream API keeps enforcing its permissions. A SQL source only runs the configured SELECTs, with bound parameters and `:tenant_id` required for shared databases; isolation then depends on those queries being right, so review them like code and connect with a read-only user restricted to the needed tables or views.
+
 ## Stored data
 
 Local files are under `tenant-<company_id>/`, with atomic writes and private permissions for newly created paths. S3 keys have the same tenant namespace. Reads validate both namespace and persisted ownership and reject expired snapshots. Legacy unowned files are not discoverable. Operators should remove old `.results/*.json` files left by an earlier version; the new store does not import or clean those files automatically.

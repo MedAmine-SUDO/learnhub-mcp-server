@@ -10,14 +10,17 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .api_client import LMSClient
 from .errors import AuthError, ToolInputError, UpstreamError
 from .result_store import ResultStore
+from .sources import DataSource
 from .tenants import Tenant, TenantRegistry
+
+# Record ids: numbers, or the opaque strings many systems use (UUIDs, slugs). Kept path-safe.
+RecordId = int | Annotated[str, Field(pattern=r"^[A-Za-z0-9_.:\-]{1,128}$")]
 
 
 class _Args(BaseModel):
@@ -32,7 +35,7 @@ class ListUsersArgs(_Args):
 
 
 class GetUserArgs(_Args):
-    user_id: int = Field(ge=1)
+    user_id: RecordId
 
 
 class ListTrainingsArgs(_Args):
@@ -42,11 +45,11 @@ class ListTrainingsArgs(_Args):
 
 
 class GetTrainingArgs(_Args):
-    training_id: int = Field(ge=1)
+    training_id: RecordId
 
 
 class ListParticipantsArgs(_Args):
-    training_id: int = Field(ge=1)
+    training_id: RecordId
     completion: Literal["not_started", "in_progress", "completed"] | None = None
     max_results: int = Field(500, ge=1, le=5000)
 
@@ -85,14 +88,14 @@ class ToolService:
     def __init__(
         self,
         registry: TenantRegistry,
-        client: LMSClient,
+        sources: dict[str, DataSource],
         store: ResultStore,
         inline_max_items: int = 25,
         inline_max_bytes: int = 20_000,
         tool_timeout_seconds: float = 25.0,
     ):
         self._registry = registry
-        self._client = client
+        self._sources = sources
         self._store = store
         self._inline_max_items = inline_max_items
         self._inline_max_bytes = inline_max_bytes
@@ -176,26 +179,45 @@ class ToolService:
             ),
         ]
 
+    def _source(self, tenant: Tenant, operation: str) -> DataSource:
+        source = self._sources.get(tenant.source)
+        if source is None:
+            raise UpstreamError(
+                f"No data source named '{tenant.source}' is configured for this organization."
+            )
+        if operation not in source.operations:
+            raise ToolInputError(
+                f"This organization's data source ({source.name}) doesn't provide {operation}."
+            )
+        return source
+
+    async def _list(self, tenant: Tenant, tool: str, operation: str, a: _Args, filters: dict,
+                    path_args: dict | None = None) -> dict:
+        page = await self._source(tenant, operation).list(
+            tenant, operation, filters, path_args or {}, a.max_results  # type: ignore[attr-defined]
+        )
+        return await self._shape(tenant, tool, a, page.items, page.total)
+
     async def _list_users(self, tenant: Tenant, a: ListUsersArgs) -> dict:
-        params = {"role": a.role, "status": a.status, "search": a.search}
-        items, total = await self._client.paginate(tenant, "/v1/users", params, a.max_results)
-        return await self._shape(tenant, "list_users", a, items, total)
+        filters = {"role": a.role, "status": a.status, "search": a.search}
+        return await self._list(tenant, "list_users", "list_users", a, filters)
 
     async def _get_user(self, tenant: Tenant, a: GetUserArgs) -> dict:
-        return await self._client.get(tenant, f"/v1/users/{a.user_id}")
+        return await self._source(tenant, "get_user").get(tenant, "get_user", {"id": a.user_id})
 
     async def _list_trainings(self, tenant: Tenant, a: ListTrainingsArgs) -> dict:
-        params = {"status": a.status, "category": a.category}
-        items, total = await self._client.paginate(tenant, "/v1/trainings", params, a.max_results)
-        return await self._shape(tenant, "list_trainings", a, items, total)
+        filters = {"status": a.status, "category": a.category}
+        return await self._list(tenant, "list_trainings", "list_trainings", a, filters)
 
     async def _get_training(self, tenant: Tenant, a: GetTrainingArgs) -> dict:
-        return await self._client.get(tenant, f"/v1/trainings/{a.training_id}")
+        source = self._source(tenant, "get_training")
+        return await source.get(tenant, "get_training", {"id": a.training_id})
 
     async def _list_participants(self, tenant: Tenant, a: ListParticipantsArgs) -> dict:
-        path = f"/v1/trainings/{a.training_id}/participants"
-        items, total = await self._client.paginate(tenant, path, {"completion": a.completion}, a.max_results)
-        return await self._shape(tenant, "list_training_participants", a, items, total)
+        return await self._list(
+            tenant, "list_training_participants", "list_participants", a,
+            {"completion": a.completion}, {"training_id": a.training_id},
+        )
 
     async def _list_stored(self, tenant: Tenant, a: ListStoredResultsArgs) -> dict:
         return {"results": await asyncio.to_thread(self._store.list, tenant_id=tenant.company_id)}
@@ -205,7 +227,9 @@ class ToolService:
             self._store.read, a.result_id, a.offset, a.limit, tenant_id=tenant.company_id
         )
 
-    async def _shape(self, tenant: Tenant, tool: str, args: _Args, items: list[dict], total: int) -> dict:
+    async def _shape(
+        self, tenant: Tenant, tool: str, args: _Args, items: list[dict], total: int | None
+    ) -> dict:
         """Return small results inline; store big ones and return a summary."""
         size = len(json.dumps(items, ensure_ascii=False).encode("utf-8"))
         if len(items) <= self._inline_max_items and size <= self._inline_max_bytes:
