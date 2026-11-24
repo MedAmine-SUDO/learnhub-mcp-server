@@ -12,6 +12,9 @@ def _int(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class Settings:
     api_base_url: str = "http://127.0.0.1:8000"
+    # Sources file (YAML/JSON, local path or s3://bucket/key); None = the learnhub preset
+    # on api_base_url as the only source, "default".
+    sources: str | None = None
     # Local JSON file path or s3://bucket/key
     tenant_registry: str = "tenants.json"
     tenant_cache_ttl_seconds: int = 300
@@ -48,6 +51,7 @@ class Settings:
         load_dotenv()
         return cls(
             api_base_url=os.getenv("LEARNHUB_API_BASE_URL", cls.api_base_url).rstrip("/"),
+            sources=os.getenv("LEARNHUB_SOURCES") or None,
             tenant_registry=os.getenv("LEARNHUB_TENANT_REGISTRY", cls.tenant_registry),
             tenant_cache_ttl_seconds=_int("LEARNHUB_TENANT_CACHE_TTL", cls.tenant_cache_ttl_seconds),
             rate_limit_per_minute=_int("LEARNHUB_RATE_LIMIT_PER_MINUTE", cls.rate_limit_per_minute),

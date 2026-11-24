@@ -1,0 +1,96 @@
+# Example sources file (LEARNHUB_SOURCES=examples/sources.example.yaml).
+#
+# Each tenant in the registry picks a source with "source": "<name>" (default: "default").
+# Two fictional examples, both exercised by the tests:
+#   brightpath  a REST API with another contract than the bundled mock: API key auth,
+#               offset pagination, camelCase fields, different status words.
+#   warehouse   a SQL database, read with SELECTs (read-only).
+# Secrets are never written here: API keys / OAuth clients are tenant credentials in the
+# registry or Secrets Manager; env:NAME values come from the environment.
+
+sources:
+  brightpath:
+    type: rest
+    base_url: env:BRIGHTPATH_URL
+    auth: { type: api_key, header: X-Api-Key } # tenant credential: api_key
+    pagination: { type: offset, offset_param: start, limit_param: count, max_page_size: 50 }
+    operations:
+      list_users:
+        path: /api/v2/people
+        items: results
+        total: count
+        params: { role: kind, status: state, search: q }
+        fields: { id: personId, first_name: givenName, last_name: familyName, email: mail, role: kind, status: state, department: team }
+        values:
+          role: { learner: student, instructor: teacher, admin: admin }
+          status: { active: enabled, inactive: disabled }
+      get_user:
+        path: "/api/v2/people/{id}"
+        item: data
+        fields: { id: personId, first_name: givenName, last_name: familyName, email: mail, role: kind, status: state, department: team }
+        values:
+          role: { learner: student, instructor: teacher, admin: admin }
+          status: { active: enabled, inactive: disabled }
+      list_trainings:
+        path: /api/v2/courses
+        items: results
+        total: count
+        params: { status: state, category: topic }
+        fields: { id: courseId, title: name, category: topic, status: state, duration_hours: hours }
+        values:
+          status: { published: live, draft: draft, archived: retired }
+      get_training:
+        path: "/api/v2/courses/{id}"
+        item: data
+        fields: { id: courseId, title: name, category: topic, status: state, duration_hours: hours }
+        values:
+          status: { published: live, draft: draft, archived: retired }
+      list_participants:
+        path: "/api/v2/courses/{training_id}/enrollments"
+        items: results
+        total: count
+        params: { completion: progress }
+        fields: { user_id: personId, training_id: courseId, progress_pct: percent, completion: progress, score: grade }
+        values:
+          completion: { not_started: todo, in_progress: doing, completed: done }
+
+  warehouse:
+    type: sql
+    url: env:WAREHOUSE_DB_URL # e.g. postgresql+psycopg://readonly@db/lms ; a tenant's database_url overrides it
+    operations:
+      list_users:
+        query: >
+          SELECT id, first_name, last_name, email, role, status, department
+          FROM users
+          WHERE company_id = :tenant_id
+            AND (:role IS NULL OR role = :role)
+            AND (:status IS NULL OR status = :status)
+            AND (:search IS NULL OR lower(first_name || ' ' || last_name || ' ' || email)
+                 LIKE '%' || lower(:search) || '%')
+          ORDER BY id
+      get_user:
+        query: SELECT * FROM users WHERE company_id = :tenant_id AND id = :id
+      list_trainings:
+        query: >
+          SELECT id, title, category, status, duration_hours FROM trainings
+          WHERE company_id = :tenant_id
+            AND (:status IS NULL OR status = :status)
+            AND (:category IS NULL OR lower(category) = lower(:category))
+          ORDER BY id
+      get_training:
+        query: >
+          SELECT t.*, COUNT(e.user_id) AS enrolled,
+                 ROUND(AVG(CASE WHEN e.completion = 'completed' THEN 1.0 ELSE 0 END), 3) AS completion_rate
+          FROM trainings t LEFT JOIN enrollments e ON e.training_id = t.id
+          WHERE t.company_id = :tenant_id AND t.id = :id
+          GROUP BY t.id
+      list_participants:
+        query: >
+          SELECT e.user_id, e.training_id, e.progress_pct, e.completion, e.score,
+                 u.first_name || ' ' || u.last_name AS name, u.email
+          FROM enrollments e
+          JOIN trainings t ON t.id = e.training_id AND t.company_id = :tenant_id
+          JOIN users u ON u.id = e.user_id
+          WHERE e.training_id = :training_id
+            AND (:completion IS NULL OR e.completion = :completion)
+          ORDER BY e.user_id

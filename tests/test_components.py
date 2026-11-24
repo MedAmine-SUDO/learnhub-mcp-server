@@ -3,7 +3,7 @@ import json
 import httpx
 import pytest
 
-from learnhub_mcp.api_client import LMSClient
+from learnhub_mcp.api_client import HttpCaller
 from learnhub_mcp.auth import OAuthTokenManager
 from learnhub_mcp.errors import AuthError, ToolInputError, UpstreamError
 from learnhub_mcp.rate_limit import SlidingWindowRateLimiter
@@ -11,7 +11,7 @@ from learnhub_mcp.result_store import ResultStore
 from learnhub_mcp.tenants import Tenant, TenantRegistry, hash_token
 
 pytestmark = pytest.mark.anyio
-TENANT = Tenant(company_id=1, name="Acme", client_id="acme-client", client_secret="acme-secret")
+TENANT = Tenant(company_id=1, name="Acme", credentials={"client_id": "acme-client", "client_secret": "acme-secret"})
 
 
 class FakeClock:
@@ -61,9 +61,14 @@ async def test_rejected_credentials_raise_auth_error():
             await OAuthTokenManager(http).get_token(TENANT)
 
 
-def _client(http: httpx.AsyncClient, clock: FakeClock) -> LMSClient:
+def _client(http: httpx.AsyncClient, clock: FakeClock) -> HttpCaller:
     tokens = OAuthTokenManager(http, clock=clock)
-    return LMSClient(http, tokens, max_retries=2, backoff_base_seconds=0.5, sleep=clock.sleep)
+
+    async def headers(tenant: Tenant) -> dict[str, str]:
+        return {"Authorization": f"Bearer {await tokens.get_token(tenant)}"}
+
+    return HttpCaller(http, headers, invalidate=tokens.invalidate, max_retries=2,
+                      backoff_base_seconds=0.5, sleep=clock.sleep)
 
 
 async def test_client_retries_429_using_retry_after():
@@ -168,7 +173,7 @@ async def test_registry_uses_secret_references_and_explicit_tool_permissions():
         "credentials_secret_id": "learnhub/acme", "allowed_tools": ["list_trainings"],
     }]}), secret_reader=read_secret)
     tenant = await registry.resolve('opaque')
-    assert tenant.client_id == 'c' and tenant.client_secret == 's'
+    assert tenant.credentials == {'client_id': 'c', 'client_secret': 's'} and tenant.source == 'default'
     assert tenant.allowed_tools == ('list_trainings',)
     await registry.resolve('opaque')
     assert secrets == ['learnhub/acme']

@@ -11,7 +11,7 @@ Python · MCP SDK 2.x · stdio + Streamable HTTP · AWS Lambda · tenant-owned r
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 </div>
 
-> **Reference implementation, with fictional data.** Rebuilt from the architecture of an MCP server I designed and deployed for a European EdTech platform. No proprietary code, customer data or credentials are included. This repository is a starting point for an integration; it is not a connector to an existing commercial LMS.
+> **Bring your own data source, with fictional demo data.** Rebuilt from the architecture of an MCP server I designed and deployed for a European EdTech platform. No proprietary code, customer data or credentials are included. The server connects to **your** LMS API or database through a configuration file; the bundled mock API is only there for tests and demos.
 
 Ask: **“Which learners haven't started a published Security course? Show five and tell me how many there are.”** The assistant can discover a course, filter its participants and answer from API data. It can follow up without receiving the whole learner directory.
 
@@ -28,6 +28,7 @@ A useful MCP integration needs more than endpoint wrappers:
 - Handle pagination, expired OAuth tokens, transient errors and upstream rate limits.
 - Return small results inline; store larger snapshots under their tenant and let the client page through them.
 - Run the same tools over local stdio and the SDK's stateless Streamable HTTP transport.
+- **Plug in any data source without forking**: a REST API described in YAML (paths, auth, pagination, field and value names), or read-only SQL queries on a database.
 
 **Who it is for:** SaaS engineers evaluating an MCP integration, and trusted training administrators trying the fictional LMS. The real deployment must apply its own authorization rules for learner data.
 
@@ -119,6 +120,41 @@ Client configuration formats vary. See the [verification matrix](docs/VERIFICATI
 
 All tools are read-only with MCP annotations and Pydantic-generated input schemas. Annotations are client hints, not authorization. Errors are returned as tool errors so the assistant can explain or correct a failed request. `count` is the number fetched; `total_available` is the upstream matching count. Never present a capped list as a complete report.
 
+## Connect your own data
+
+The tools stay the same; a **sources file** says where each organization's data comes from (`LEARNHUB_SOURCES=sources.yaml`). Each tenant in the registry picks a source and holds the credentials it needs. Without a sources file, the built-in `learnhub` preset (the mock API's contract) is used, so the demo works as before.
+
+```yaml
+sources:
+  default:
+    type: rest                                   # any JSON API
+    base_url: env:LMS_API_URL
+    auth: { type: api_key, header: X-Api-Key }    # or oauth_client_credentials, bearer, basic, none
+    pagination: { type: offset, offset_param: start, limit_param: count }   # or page, cursor, none
+    operations:
+      list_users:
+        path: /api/v2/people
+        items: results
+        total: count
+        params: { role: kind, status: state, search: q }         # our filters → their parameters
+        fields: { id: personId, first_name: givenName, role: kind }  # our names ← their names
+        values: { role: { learner: student, instructor: teacher } }  # our words ↔ their words
+      get_user: { path: "/api/v2/people/{id}", item: data }
+  warehouse:
+    type: sql                                     # read-only SELECTs, bound parameters
+    url: env:WAREHOUSE_DB_URL
+    operations:
+      list_users:
+        query: >
+          SELECT id, first_name, last_name, email, role, status FROM users
+          WHERE company_id = :tenant_id AND (:role IS NULL OR role = :role) ORDER BY id
+```
+
+- **Only what you configure is offered.** A tool whose operation a source doesn't define, or a filter it can't apply, returns a clear tool error instead of a guess.
+- **Secrets stay out of the file**: API keys and OAuth clients are tenant credentials (registry or Secrets Manager); `env:NAME` values come from the environment.
+- **SQL is read-only by construction**: one SELECT per operation, parameters always bound, `:tenant_id` required unless the source is single-tenant, connections opened read-only where the database supports it.
+- Both shapes are tested end to end with the same questions and answers: a second fictional API with a different contract, and a SQLite database. Full example: [examples/sources.example.yaml](examples/sources.example.yaml); guide: [docs/ADAPTATION.md](docs/ADAPTATION.md).
+
 ## Architecture
 
 ```mermaid
@@ -127,7 +163,9 @@ flowchart LR
     Transport --> Service[Shared ToolService]
     Service --> Registry[Hashed client-token registry]
     Registry --> Secrets[Inline demo secrets / Secrets Manager]
-    Service --> API[OAuth-protected LMS API]
+    Service --> Sources[Data source per tenant]
+    Sources --> REST[Any JSON API: configured auth, pagination, mapping]
+    Sources --> SQL[Database: read-only SELECTs]
     Service --> Results[Tenant-owned snapshots: disk / S3]
 ```
 
@@ -135,12 +173,12 @@ The remote path uses the official MCP SDK, served by Starlette/Uvicorn or adapte
 
 ## Adapt and deploy
 
-- [Adaptation guide](docs/ADAPTATION.md): API contract, tenant setup, permissions and acceptance checks.
+- [Adaptation guide](docs/ADAPTATION.md): connecting your API or database, tenant setup, permissions and acceptance checks.
 - [Deployment guide](docs/DEPLOYMENT.md): complete prerequisites, shared S3 snapshots, secret references, local AWS emulator, AWS commands, verification and teardown.
 - [Security model](docs/SECURITY.md): trust boundary, token scopes, retention, limitations and operational controls.
 - [Verification record](docs/VERIFICATION.md): tested paths and evidence.
 
-**Changing the base URL alone does not adapt another LMS.** OAuth endpoints, REST paths, response envelopes and pagination must match or be adapted.
+Another LMS is adapted with a sources file, not code: paths, envelopes, pagination, authentication, field and value names are configuration. Business questions that need new tools (for example write operations) are still code.
 
 ## Boundaries before using real data
 
@@ -159,7 +197,7 @@ uv sync --locked --extra aws --extra mock
 uv run pytest -q
 ```
 
-Tests cover tenant-owned snapshots, partial final pages, expiry, OAuth refresh, retries, permissions, deadlines, HTTP security, Lambda-shaped events and S3 request behavior. CI runs on Python 3.11 and 3.12, installs and exercises the built wheel outside the checkout, and builds the Linux/Python 3.12 Lambda zip with locked AWS dependencies. See the [release checklist](docs/RELEASING.md) for artifact checks, migration notes and publishing steps.
+Tests cover the same questions over three data sources (the mock API, an API with another contract, a SQL database), tenant-owned snapshots, partial final pages, expiry, OAuth refresh, retries, permissions, deadlines, HTTP security, Lambda-shaped events and S3 request behavior. CI runs on Python 3.11 and 3.12, installs and exercises the built wheel outside the checkout, and builds the Linux/Python 3.12 Lambda zip with locked AWS dependencies. See the [release checklist](docs/RELEASING.md) for artifact checks, migration notes and publishing steps.
 
 ## Working with me
 

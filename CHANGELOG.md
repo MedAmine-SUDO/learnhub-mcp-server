@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0 — 24 November 2026
+
+### Any data source, by configuration
+
+- New data source layer: the tools call five operations (list/get users, list/get trainings, list participants) on the tenant's data source instead of fixed REST paths.
+- `rest` sources describe any JSON API in YAML/JSON: paths, response envelopes, totals, filters → query parameters, field renames and value translations both ways; auth `oauth_client_credentials`, `bearer`, `api_key`, `basic` or `none`; pagination `page`, `offset`, `cursor` or `none` (repeating cursors refused).
+- `sql` sources read a database with one configured SELECT per operation (bound parameters, `:tenant_id` required unless single-tenant, read-only connections on SQLite/Postgres, query errors not leaked to the assistant). Extra: `learnhub-mcp-server[sql]`.
+- `LEARNHUB_SOURCES` points at the sources file (local or S3). Without it, the built-in `learnhub` preset keeps the 0.2 behaviour on `LEARNHUB_API_BASE_URL`.
+- Registry entries can name a `source` and carry `credentials` for it; the 0.2 `client_id`/`client_secret` format still works.
+- Tools accept string ids (UUIDs, slugs) as well as numbers; operations or filters a source doesn't provide return a clear tool error.
+- Tested with the same questions over the mock API, a second fictional API with a different contract and a SQLite database. Example: `examples/sources.example.yaml`.
+
 ## 0.2.0 — 20 November 2026
 
 ### Correctness and security

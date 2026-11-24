@@ -1,6 +1,6 @@
 # Releasing LearnHub
 
-This checklist covers **0.2.0**, a beta reference implementation with fictional LMS data.
+This checklist covers **0.3.0**, a beta reference implementation with fictional LMS data.
 The repository, wheel and source archive support Python 3.11 and 3.12 as verified
 below. Real AWS/account permissions and a customer's API require a separate
 integration acceptance check; see [verification boundaries](VERIFICATION.md).
@@ -42,7 +42,7 @@ version. All jobs must pass on the exact release commit.
 
 ## Prepare release notes
 
-Use the 0.2.0 entry in [CHANGELOG.md](../CHANGELOG.md), including its migration
+Use the 0.3.0 entry in [CHANGELOG.md](../CHANGELOG.md), including its migration
 notes. State the important upgrade requirements:
 
 - Remote MCP clients use `/mcp` with `Authorization: Bearer ...` on initialization,
@@ -65,7 +65,7 @@ PyPI. When publishing is requested:
 1. Confirm the exact commit has a passing `tests` workflow and the version matches
    both the package metadata and MCP server version. Change the changelog's
    “prepared” label to the actual release date and commit that change first.
-2. Create the `v0.2.0` tag on that commit. Wait for the tag workflow to pass.
+2. Create the `v0.3.0` tag on that commit. Wait for the tag workflow to pass.
 3. Use that tag's workflow artifacts for a GitHub release: the wheel, source
    archive and `lambda.zip`. Include SHA-256 checksums calculated from those exact
    files and the reviewed changelog/migration notes.

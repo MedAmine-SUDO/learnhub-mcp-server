@@ -14,6 +14,8 @@ curl http://127.0.0.1:8001/health
 
 Configure a native MCP client for `/mcp` with the Bearer demo token. Host validation allows loopback by default. To bind a container or a remote host, configure `LEARNHUB_HTTP_HOST`, `LEARNHUB_ALLOWED_HOSTS` and TLS termination. Origins are denied unless explicitly listed; the application does not provide browser CORS or OAuth login.
 
+Set `LEARNHUB_SOURCES` to the sources file (local path, or `s3://bucket/key` with `s3:GetObject` on it) when the data doesn't come from the built-in preset; see [ADAPTATION.md](ADAPTATION.md). A SQL source needs the `sql` extra and the database driver in the image or Lambda package.
+
 For multiple machines, set `LEARNHUB_RESULT_STORE_URI=s3://bucket/results`. Install `--extra aws`, give the runtime GetObject/PutObject/DeleteObject on that prefix and ListBucket restricted by prefix, and add a one-day lifecycle rule. Reads check expiry independently of lifecycle deletion.
 
 ## Package Lambda
